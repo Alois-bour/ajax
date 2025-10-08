@@ -453,6 +453,14 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    public function escape_ics_text($text)
+    {
+        $text = str_replace('\\', '\\\\', $text);
+        $text = str_replace(',', '\,', $text);
+        $text = str_replace(';', '\;', $text);
+        $text = str_replace("\n", "\\n", $text);
+        return $text;
+    }
 
     private function save_reservation($data)
     {
@@ -514,6 +522,12 @@ document.addEventListener("DOMContentLoaded", function() {
     $dtstart = date('Ymd\THis', strtotime("$date $heure"));
     $dtend = date('Ymd\THis', strtotime("$date $heure +1 hour"));
     $uid = uniqid();
+
+    // Échapper les données pour le fichier ICS
+    $summary = $this->escape_ics_text("Rendez-vous avec $prenom $nom");
+    $description = $this->escape_ics_text("Rendez-vous avec $prenom $nom\nEntité: $entite\nEmail: $email\nSujet(s): $sujets_str");
+    $location = $this->escape_ics_text("Votre lieu de rendez-vous");
+
     $ics = "BEGIN:VCALENDAR\r\n";
     $ics .= "VERSION:2.0\r\n";
     $ics .= "PRODID:-//VotreSite//Reservation Plugin//FR\r\n";
@@ -523,9 +537,9 @@ document.addEventListener("DOMContentLoaded", function() {
     $ics .= "DTSTAMP:" . gmdate('Ymd\THis\Z') . "\r\n";
     $ics .= "DTSTART:$dtstart\r\n";
     $ics .= "DTEND:$dtend\r\n";
-    $ics .= "SUMMARY:Rendez-vous avec $prenom $nom\r\n";
-    $ics .= "DESCRIPTION:Rendez-vous avec $prenom $nom\\nEntité: $entite\\nEmail: $email\\nSujet(s): $sujets_str\r\n";
-    $ics .= "LOCATION:Votre lieu de rendez-vous\r\n";
+    $ics .= "SUMMARY:$summary\r\n";
+    $ics .= "DESCRIPTION:$description\r\n";
+    $ics .= "LOCATION:$location\r\n";
     $ics .= "END:VEVENT\r\n";
     $ics .= "END:VCALENDAR\r\n";
 
