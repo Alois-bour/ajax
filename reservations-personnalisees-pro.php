@@ -543,30 +543,27 @@ document.addEventListener("DOMContentLoaded", function() {
     $ics .= "END:VEVENT\r\n";
     $ics .= "END:VCALENDAR\r\n";
 
-    // --- Préparer le mail avec pièce jointe ICS ---
-    $boundary = md5(time());
+    // --- Préparer le mail avec pièce jointe ICS en utilisant la méthode standard de WP ---
+    $upload_dir = wp_upload_dir();
+    $ics_path = $upload_dir['basedir'] . '/reservation-' . $uid . '.ics';
+
+    // Écrire le contenu ICS dans un fichier temporaire
+    file_put_contents($ics_path, $ics);
 
     $headers = [];
     $headers[] = "From: $from_name <$from_email>";
-    $headers[] = "MIME-Version: 1.0";
-    $headers[] = "Content-Type: multipart/mixed; charset=UTF-8; boundary=\"$boundary\"";
+    $headers[] = 'Content-Type: text/html; charset=UTF-8';
 
-    // Corps du mail
-    $message_body = "--$boundary\r\n";
-    $message_body .= "Content-Type: text/html; charset=UTF-8\r\n";
-    $message_body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
-    $message_body .= nl2br($client_message) . "\r\n\r\n";
+    // Le corps du message est maintenant juste le message HTML
+    $message_body = nl2br($client_message);
 
-    // Pièce jointe ICS
-    $message_body .= "--$boundary\r\n";
-    $message_body .= "Content-Type: text/calendar; method=REQUEST; name=\"reservation.ics\"\r\n";
-    $message_body .= "Content-Disposition: attachment; filename=\"reservation.ics\"\r\n";
-    $message_body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
-    $message_body .= $ics . "\r\n";
-    $message_body .= "--$boundary--";
+    // Envoyer le mail avec la pièce jointe
+    wp_mail($email, $client_subject, $message_body, $headers, [$ics_path]);
 
-    // Envoi au client
-    wp_mail($email, $client_subject, $message_body, $headers);
+    // Supprimer le fichier temporaire
+    if (file_exists($ics_path)) {
+        unlink($ics_path);
+    }
 
     // --- Mail ADMIN ---
     $admin_email_to = get_option('reservations_mail_admin_email', get_option('admin_email'));
