@@ -43,6 +43,9 @@ final class ReservationsPlugin
         register_activation_hook(__FILE__, [$this, 'install_database']);
 
         add_action('init', [$this, 'load_textdomain']);
+        add_action('init', [$this, 'register_rewrite_rules']);
+        add_filter('query_vars', [$this, 'register_query_vars']);
+        add_action('template_redirect', [$this, 'handle_rewrite_request']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_styles']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_styles']);
 
@@ -51,23 +54,36 @@ final class ReservationsPlugin
         add_action('admin_menu', [$this, 'add_admin_menu']);
 
         // Form handlers
-        add_action('admin_post_reservations_submit', [$this, 'handle_form_submission']);
-        add_action('admin_post_nopriv_reservations_submit', [$this, 'handle_form_submission']);
         add_action('admin_post_reservations_export', [$this, 'handle_csv_export']);
         add_action('admin_post_reservations_add_blocked_slot', [$this, 'handle_add_blocked_slot']);
         add_action('admin_post_reservations_delete_blocked_slot', [$this, 'handle_delete_blocked_slot']);
         add_action('admin_post_reservations_add_subject', [$this, 'handle_add_subject']);
         add_action('admin_post_reservations_delete_subject', [$this, 'handle_delete_subject']);
         add_action('admin_post_reservations_delete_reservation', [$this, 'handle_delete_reservation']);
-        
-        // AJAX handlers pour le formulaire frontend
-        add_action('wp_ajax_reservations_submit_ajax', [$this, 'handle_ajax_submission']);
-        add_action('wp_ajax_nopriv_reservations_submit_ajax', [$this, 'handle_ajax_submission']);
     }
 
     public function load_textdomain()
     {
         load_plugin_textdomain('reservations-personnalise', false, dirname(plugin_basename(__FILE__)) . '/languages');
+    }
+
+    public function register_rewrite_rules()
+    {
+        add_rewrite_rule('^reservation-submit/?$', 'index.php?reservation_submit_form=true', 'top');
+    }
+
+    public function register_query_vars($vars)
+    {
+        $vars[] = 'reservation_submit_form';
+        return $vars;
+    }
+
+    public function handle_rewrite_request()
+    {
+        if (get_query_var('reservation_submit_form')) {
+            $this->handle_form_submission();
+            exit;
+        }
     }
 
     public function install_database()
@@ -113,167 +129,23 @@ final class ReservationsPlugin
         if (get_option('reservations_display_unavailable') === false) {
             update_option('reservations_display_unavailable', 'grey'); // default = grey (griser)
         }
+
+        // Add rewrite rule and flush
+        $this->register_rewrite_rules();
+        flush_rewrite_rules();
     }
 
+    
     public function enqueue_styles()
-    {
-        wp_register_style('reservations-style', false);
-        wp_enqueue_style('reservations-style');
-
-        $css = "
-            .reservation-form-wrapper {
-    max-width: 600px;
-    margin: 20px auto;
+{
+    // Chemin vers le fichier CSS du plugin
+    wp_enqueue_style(
+        'reservations-style',
+        plugin_dir_url(__FILE__) . 'assets/css/reservations.css',
+        [],
+        filemtime(plugin_dir_path(__FILE__) . 'assets/css/reservations.css') // Pour versionnement automatique
+    );
 }
-.reservation-form {
-    padding: 30px;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 15px rgba(0,0,0,0.08);
-}
-.reservation-form label {
-    display: block;
-    margin-bottom: 12px;
-    font-weight: 600;
-    color: #333;
-    font-size: 14px;
-}
-.date-buttons {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 25px;
-}
-.date-button {
-    padding: 20px 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    background: #fff;
-    cursor: pointer;
-    transition: all 0.3s;
-    text-align: center;
-    position: relative;
-}
-.date-button:hover {
-    border-color: #0693e3;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(6,147,227,0.15);
-}
-.date-button.selected {
-    border-color: #0693e3;
-    background: linear-gradient(135deg, #0693e3 0%, #0473b3 100%);
-    color: white;
-}
-.date-button.disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    background: #f8f8f8;
-}
-.date-button.disabled:hover {
-    border-color: #e0e0e0;
-    transform: none;
-    box-shadow: none;
-}
-.date-button .day {
-    font-size: 12px;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin-bottom: 5px;
-}
-.date-button .date-num {
-    font-size: 24px;
-    font-weight: bold;
-}
-.date-button .month {
-    font-size: 12px;
-    margin-top: 3px;
-}
-.date-button input[type='radio'] {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-.reservation-form input[type='text'],
-.reservation-form input[type='email'],
-.reservation-form select {
-    width: 100%;
-    padding: 12px;
-    margin-bottom: 20px;
-    border: 2px solid #e0e0e0;
-    border-radius: 6px;
-    box-sizing: border-box;
-    font-size: 15px;
-    transition: border-color 0.3s;
-}
-.reservation-form input:focus,
-.reservation-form select:focus {
-    outline: none;
-    border-color: #0693e3;
-}
-.reservation-form input[type='submit'] {
-    width: 100%;
-    background: linear-gradient(135deg, #0693e3 0%, #0473b3 100%);
-    color: white;
-    border: none;
-    padding: 14px 20px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-.reservation-form input[type='submit']:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(6,147,227,0.3);
-}
-.reservation-form input[type='submit']:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
-.reservation-message {
-    max-width: 600px;
-    margin: 20px auto;
-    padding: 15px 20px;
-    border-radius: 6px;
-    text-align: center;
-    font-weight: 500;
-}
-.reservation-message.success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-}
-.reservation-message.error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-}
-.loading-spinner {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(255,255,255,.3);
-    border-radius: 50%;
-    border-top-color: #fff;
-    animation: spin 1s ease-in-out infinite;
-}
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-@media (max-width: 480px) {
-    .reservation-form {
-        padding: 20px;
-    }
-    .date-buttons {
-        grid-template-columns: 1fr;
-    }
-}
-
-        ";
-
-        wp_add_inline_style('reservations-style', $css);
-    }
 
     public function enqueue_admin_styles($hook)
     {
@@ -352,13 +224,22 @@ final class ReservationsPlugin
         ob_start();
         ?>
         <div class="reservation-form-wrapper">
-            <div id="reservation-ajax-message" style="display:none;"></div>
+
+            <?php
+            if (isset($_GET['reservation_success'])) {
+                echo '<div class="reservation-message success">' . esc_html(urldecode($_GET['reservation_success'])) . '</div>';
+            }
+            if (isset($_GET['reservation_error'])) {
+                echo '<div class="reservation-message error">' . esc_html(urldecode($_GET['reservation_error'])) . '</div>';
+            }
+            ?>
 
             <?php if (!$has_slots): ?>
                 <div class="reservation-message error">😔 Désolé, aucun créneau n'est disponible pour le moment.</div>
             <?php else: ?>
-                <form method="post" class="reservation-form" id="reservation-form">
+                <form method="post" action="<?php echo esc_url(home_url('/reservation-submit/')); ?>" class="reservation-form" id="reservation-form">
                     <?php wp_nonce_field('reservation_action', 'reservation_nonce'); ?>
+                    <input type="hidden" name="_wp_http_referer" value="<?php echo esc_url(wp_unslash($_SERVER['REQUEST_URI'])); ?>">
 
                     <label>📅 Choisissez une date :</label>
                     <div class="date-buttons">
@@ -432,7 +313,7 @@ final class ReservationsPlugin
                         <?php endif; ?>
                     </div>
 
-                    <input type="submit" name="reserver" value="Réserver mon créneau" id="submit-btn">
+                    <button type="submit" name="reserver" id="submit-btn">Réserver mon créneau</button>
 
                 </form>
 
@@ -492,58 +373,7 @@ document.addEventListener("DOMContentLoaded", function() {
     updateSelect();
     updateSelectedClass();
 
-    // Gestion de la soumission AJAX
-    form.addEventListener("submit", function(e) {
-        e.preventDefault();
-        
-        // Désactiver le bouton pendant l'envoi
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="loading-spinner"></span> Envoi en cours...';
-        
-        // Cacher les messages précédents
-        messageDiv.style.display = 'none';
-        
-        // Récupérer les données du formulaire
-        const formData = new FormData(form);
-        formData.append('action', 'reservations_submit_ajax');
-        
-        // Envoi AJAX
-        fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Afficher le message
-            messageDiv.style.display = 'block';
-            messageDiv.className = 'reservation-message ' + (data.success ? 'success' : 'error');
-            messageDiv.textContent = data.message;
-            
-            // Scroll vers le message
-            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
-            if (data.success) {
-                // Réinitialiser le formulaire en cas de succès
-                form.reset();
-                updateSelect();
-                updateSelectedClass();
-            }
-            
-            // Réactiver le bouton
-            submitBtn.disabled = false;
-            submitBtn.value = 'Réserver mon créneau';
-        })
-        .catch(error => {
-            console.error('Erreur:', error);
-            messageDiv.style.display = 'block';
-            messageDiv.className = 'reservation-message error';
-            messageDiv.textContent = 'Une erreur est survenue. Veuillez réessayer.';
-            
-            // Réactiver le bouton
-            submitBtn.disabled = false;
-            submitBtn.value = 'Réserver mon créneau';
-        });
-    });
+    // No AJAX submission, standard form post
 });
 </script>
 
@@ -555,73 +385,6 @@ document.addEventListener("DOMContentLoaded", function() {
         return ob_get_clean();
     }
 
-    // --- AJAX Form processing ---
-    public function handle_ajax_submission()
-    {
-        // Vérification du nonce pour la sécurité
-        if (!isset($_POST['reservation_nonce']) || !wp_verify_nonce($_POST['reservation_nonce'], 'reservation_action')) {
-            wp_send_json_error([
-                'success' => false,
-                'message' => 'Erreur de sécurité.'
-            ]);
-        }
-
-        // Récupération et nettoyage des champs
-        $date = isset($_POST['date']) ? sanitize_text_field($_POST['date']) : '';
-        $heure = isset($_POST['heure']) ? sanitize_text_field($_POST['heure']) : '';
-        $nom = isset($_POST['nom']) ? sanitize_text_field($_POST['nom']) : '';
-        $prenom = isset($_POST['prenom']) ? sanitize_text_field($_POST['prenom']) : '';
-        $entite = isset($_POST['entite']) ? sanitize_text_field($_POST['entite']) : '';
-        $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
-
-        $sujets = [];
-        if (!empty($_POST['sujets']) && is_array($_POST['sujets'])) {
-            foreach ($_POST['sujets'] as $s) {
-                $s = sanitize_text_field($s);
-                if ($s !== '') $sujets[] = $s;
-            }
-        }
-        // Si aucun sujet coché, regarder si un texte libre est rempli
-        if (empty($sujets) && !empty($_POST['sujets_free'])) {
-            $free = sanitize_text_field($_POST['sujets_free']);
-            if ($free !== '') $sujets[] = $free;
-        }
-
-        // Vérification des champs obligatoires
-        if (empty($date) || empty($heure) || empty($nom) || empty($prenom) || empty($entite) || empty($email) || !is_email($email) || empty($sujets)) {
-            wp_send_json_error([
-                'success' => false,
-                'message' => 'Tous les champs sont obligatoires.'
-            ]);
-        }
-
-        // Vérification de la disponibilité du créneau (évite les doublons)
-        if (!$this->is_slot_available($date, $heure)) {
-            wp_send_json_error([
-                'success' => false,
-                'message' => 'Désolé, ce créneau n\'est plus disponible.'
-            ]);
-        }
-
-        // Sauvegarde de la réservation
-        $saved = $this->save_reservation(compact('date', 'heure', 'nom', 'prenom', 'entite', 'email', 'sujets'));
-        
-        if ($saved) {
-            // Envoi des mails
-            $this->send_notifications(compact('date', 'heure', 'nom', 'prenom', 'entite', 'email', 'sujets'));
-
-            wp_send_json_success([
-                'success' => true,
-                'message' => "Merci $prenom $nom! Votre rendez-vous est confirmé."
-            ]);
-        } else {
-            wp_send_json_error([
-                'success' => false,
-                'message' => "Une erreur est survenue lors de l'enregistrement."
-            ]);
-        }
-    }
-
     // --- Form processing (conservé pour la compatibilité admin) ---
     public function handle_form_submission()
     {
@@ -629,7 +392,7 @@ document.addEventListener("DOMContentLoaded", function() {
         if (!isset($_POST['reservation_nonce']) || !wp_verify_nonce($_POST['reservation_nonce'], 'reservation_action')) {
             wp_safe_redirect(add_query_arg('reservation_error', urlencode('Erreur de sécurité.'), wp_get_referer()));
             exit;
-        } 
+        }
 
         // Récupération et nettoyage des champs
         $date = isset($_POST['date']) ? sanitize_text_field($_POST['date']) : '';
@@ -653,14 +416,19 @@ document.addEventListener("DOMContentLoaded", function() {
         }
 
         // Déterminer l'URL de redirection (page d'origine)
-        $redirect_url = !empty($_POST['redirect_to']) ? esc_url_raw($_POST['redirect_to']) : wp_get_referer();
-        if (empty($redirect_url)) {
-            $redirect_url = home_url('/');
-        }
+        $redirect_url = !empty($_POST['_wp_http_referer']) ? esc_url_raw(wp_unslash($_POST['_wp_http_referer'])) : home_url('/');
 
         // Vérification des champs obligatoires
         if (empty($date) || empty($heure) || empty($nom) || empty($prenom) || empty($entite) || empty($email) || !is_email($email) || empty($sujets)) {
             wp_safe_redirect(add_query_arg('reservation_error', urlencode('Tous les champs sont obligatoires.'), $redirect_url));
+            exit;
+        }
+
+        // --- Validation serveur : date/heure valides ---
+        $allowed_dates = array_keys($this->get_dates());
+        $allowed_heures = $this->get_heures();
+        if (!in_array($date, $allowed_dates) || !in_array($heure, $allowed_heures)) {
+            wp_safe_redirect(add_query_arg('reservation_error', urlencode('Date ou heure invalide.'), $redirect_url));
             exit;
         }
 
